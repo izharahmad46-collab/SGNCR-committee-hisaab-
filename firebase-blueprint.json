@@ -1,0 +1,509 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated Firebase user profile mapped to a committee role (private PII).",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "email": { "type": "string", "format": "email", "maxLength": 254 },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "role": { "type": "string", "enum": ["admin_main", "admin_secondary", "member"] },
+        "memberCode": { "type": "string", "maxLength": 32 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "displayName", "role", "createdAt", "updatedAt"]
+    },
+    "AdminRegistry": {
+      "title": "AdminRegistry",
+      "description": "Authorized committee administrator registry (strictly max 2 admins: Primary and Secondary).",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "email": { "type": "string", "format": "email", "maxLength": 254 },
+        "fullName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "role": { "type": "string", "enum": ["admin_main", "admin_secondary"] },
+        "slot": { "type": "integer", "minimum": 1, "maximum": 2 },
+        "assignedByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "fullName", "role", "slot", "assignedByUid", "createdAt", "updatedAt"]
+    },
+    "CommitteeMemberProfile": {
+      "title": "CommitteeMemberProfile",
+      "description": "Committee member contribution profile with masked phone for transparency without raw PII leakage.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "memberCode": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "fullName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "phoneMasked": { "type": "string", "maxLength": 32 },
+        "village": { "type": "string", "maxLength": 160 },
+        "monthlyAmount": { "type": "number", "minimum": 1, "maximum": 1000000 },
+        "joiningDate": { "type": "string", "minLength": 10, "maxLength": 10 },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "totalExpected": { "type": "number", "minimum": 0 },
+        "totalPaid": { "type": "number", "minimum": 0 },
+        "outstandingAmount": { "type": "number", "minimum": 0 },
+        "pendingMonthsCount": { "type": "integer", "minimum": 0, "maximum": 600 },
+        "pendingSince": { "type": "string", "maxLength": 16 },
+        "isDemo": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "memberCode",
+        "fullName",
+        "monthlyAmount",
+        "joiningDate",
+        "status",
+        "totalExpected",
+        "totalPaid",
+        "outstandingAmount",
+        "pendingMonthsCount",
+        "isDemo",
+        "updatedAt"
+      ]
+    },
+    "MonthlyContribution": {
+      "title": "MonthlyContribution",
+      "description": "Individual monthly contribution due and payment ledger record per member and month.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "memberId": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "memberCode": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "memberName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "monthKey": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}$" },
+        "expectedAmount": { "type": "number", "minimum": 1, "maximum": 1000000 },
+        "paidAmount": { "type": "number", "minimum": 0, "maximum": 1000000 },
+        "remainingAmount": { "type": "number", "minimum": 0, "maximum": 1000000 },
+        "status": { "type": "string", "enum": ["paid", "partial", "unpaid", "overdue"] },
+        "paidDate": { "type": "string", "maxLength": 32 },
+        "txnNumber": { "type": "string", "maxLength": 48 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "memberId",
+        "memberCode",
+        "memberName",
+        "monthKey",
+        "expectedAmount",
+        "paidAmount",
+        "remainingAmount",
+        "status",
+        "updatedAt"
+      ]
+    },
+    "VirtualFund": {
+      "title": "VirtualFund",
+      "description": "Separate virtual fund ledger mapped to the single physical committee bank account.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "code": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "nameEn": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "nameHi": { "type": "string", "maxLength": 120 },
+        "nameUr": { "type": "string", "maxLength": 120 },
+        "scope": { "type": "string", "enum": ["masjid", "madrasa", "restricted", "general"] },
+        "isRestricted": { "type": "boolean" },
+        "restrictedRule": { "type": "string", "maxLength": 300 },
+        "description": { "type": "string", "maxLength": 400 },
+        "isActive": { "type": "boolean" },
+        "openingBalance": { "type": "number" },
+        "totalIncome": { "type": "number", "minimum": 0 },
+        "totalExpense": { "type": "number", "minimum": 0 },
+        "transfersIn": { "type": "number", "minimum": 0 },
+        "transfersOut": { "type": "number", "minimum": 0 },
+        "currentBalance": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "code",
+        "nameEn",
+        "scope",
+        "isRestricted",
+        "openingBalance",
+        "totalIncome",
+        "totalExpense",
+        "transfersIn",
+        "transfersOut",
+        "currentBalance",
+        "updatedAt"
+      ]
+    },
+    "FinancialTransaction": {
+      "title": "FinancialTransaction",
+      "description": "Double-entry financial transaction record for income, expense, transfer, or reversal.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "txnNumber": { "type": "string", "minLength": 1, "maxLength": 48 },
+        "date": { "type": "string", "minLength": 10, "maxLength": 10 },
+        "monthKey": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}$" },
+        "type": { "type": "string", "enum": ["income", "expense", "transfer", "reversal"] },
+        "category": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "fundId": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "targetFundId": { "type": "string", "maxLength": 80 },
+        "bankAccountId": { "type": "string", "maxLength": 80 },
+        "paymentMethod": { "type": "string", "enum": ["Cash", "UPI", "Bank"] },
+        "amount": { "type": "number", "minimum": 0.01, "maximum": 100000000 },
+        "partyName": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "description": { "type": "string", "maxLength": 500 },
+        "status": { "type": "string", "enum": ["approved", "pending_approval", "rejected", "reversed"] },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdByName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "approvedBy": { "type": "string", "maxLength": 128 },
+        "approvedByName": { "type": "string", "maxLength": 120 },
+        "isDemo": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "txnNumber",
+        "date",
+        "monthKey",
+        "type",
+        "category",
+        "fundId",
+        "paymentMethod",
+        "amount",
+        "partyName",
+        "status",
+        "createdBy",
+        "createdByName",
+        "isDemo",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "StaffSalary": {
+      "title": "StaffSalary",
+      "description": "Imam and Madrasa teacher salary ledger summary.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "designation": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "institution": { "type": "string", "enum": ["masjid", "madrasa"] },
+        "fundId": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "monthlySalary": { "type": "number", "minimum": 1, "maximum": 1000000 },
+        "joiningDate": { "type": "string", "minLength": 10, "maxLength": 10 },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "totalPayable": { "type": "number", "minimum": 0 },
+        "totalPaid": { "type": "number", "minimum": 0 },
+        "totalPending": { "type": "number", "minimum": 0 },
+        "maxPendingDays": { "type": "integer", "minimum": 0 },
+        "isDemo": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "name",
+        "designation",
+        "institution",
+        "fundId",
+        "monthlySalary",
+        "joiningDate",
+        "status",
+        "totalPayable",
+        "totalPaid",
+        "totalPending",
+        "isDemo",
+        "updatedAt"
+      ]
+    },
+    "ApprovalWorkflow": {
+      "title": "ApprovalWorkflow",
+      "description": "Dual-admin approval workflow record for expenses above ₹5,000. Creator cannot approve own request.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "txnId": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "txnNumber": { "type": "string", "minLength": 1, "maxLength": 48 },
+        "amount": { "type": "number", "minimum": 0.01, "maximum": 100000000 },
+        "fundId": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "partyName": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdByName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "decidedByUid": { "type": "string", "maxLength": 128 },
+        "decidedByName": { "type": "string", "maxLength": 120 },
+        "decisionReason": { "type": "string", "maxLength": 400 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "txnId",
+        "txnNumber",
+        "amount",
+        "fundId",
+        "partyName",
+        "status",
+        "createdByUid",
+        "createdByName",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Immutable financial and administrative audit trail record (append-only, never updated or deleted).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "adminId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "adminName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "action": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "entityType": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "entityId": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "beforeData": { "type": "string", "maxLength": 4000 },
+        "afterData": { "type": "string", "maxLength": 4000 },
+        "reason": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "timestamp", "adminId", "adminName", "action", "entityType", "entityId", "createdAt"]
+    },
+    "MonthlyClosing": {
+      "title": "MonthlyClosing",
+      "description": "Monthly accounting closing statement and lock status.",
+      "type": "object",
+      "properties": {
+        "monthKey": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}$" },
+        "isLocked": { "type": "boolean" },
+        "totalIncome": { "type": "number", "minimum": 0 },
+        "totalExpense": { "type": "number", "minimum": 0 },
+        "outstandingContributions": { "type": "number", "minimum": 0 },
+        "pendingSalaries": { "type": "number", "minimum": 0 },
+        "closingBalance": { "type": "number" },
+        "closedByName": { "type": "string", "maxLength": 120 },
+        "reopenReason": { "type": "string", "maxLength": 400 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "monthKey",
+        "isLocked",
+        "totalIncome",
+        "totalExpense",
+        "outstandingContributions",
+        "pendingSalaries",
+        "closingBalance",
+        "updatedAt"
+      ]
+    },
+    "BankAccount": {
+      "title": "BankAccount",
+      "description": "Official physical committee bank account and UPI/QR configuration.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "bankName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "accountName": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "accountNumber": { "type": "string", "minLength": 4, "maxLength": 40 },
+        "ifsc": { "type": "string", "minLength": 4, "maxLength": 20 },
+        "branch": { "type": "string", "maxLength": 120 },
+        "upiId": { "type": "string", "maxLength": 120 },
+        "qrCodeUrl": { "type": "string", "maxLength": 500 },
+        "fundScope": { "type": "string", "maxLength": 120 },
+        "openingBalance": { "type": "number" },
+        "currentBalance": { "type": "number" },
+        "instructions": { "type": "string", "maxLength": 500 },
+        "isActive": { "type": "boolean" },
+        "isDemo": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "bankName",
+        "accountName",
+        "accountNumber",
+        "ifsc",
+        "openingBalance",
+        "currentBalance",
+        "isActive",
+        "isDemo",
+        "updatedAt"
+      ]
+    },
+    "PaymentSubmission": {
+      "title": "PaymentSubmission",
+      "description": "Member UPI/Bank transfer proof submitted for administrator verification.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "memberId": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "memberCode": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "memberName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "submittedByUid": { "type": "string", "maxLength": 128 },
+        "paymentCategory": { "type": "string", "enum": ["monthly_contribution", "donation"] },
+        "amount": { "type": "number", "minimum": 1, "maximum": 10000000 },
+        "fundId": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "utrReference": { "type": "string", "minLength": 6, "maxLength": 80 },
+        "screenshotUrl": { "type": "string", "maxLength": 500 },
+        "notes": { "type": "string", "maxLength": 400 },
+        "status": { "type": "string", "enum": ["pending_verification", "verified", "rejected"] },
+        "verifiedByName": { "type": "string", "maxLength": 120 },
+        "rejectionNote": { "type": "string", "maxLength": 400 },
+        "linkedTxnNumber": { "type": "string", "maxLength": 48 },
+        "receiptNumber": { "type": "string", "maxLength": 48 },
+        "bankVerifiedConfirmed": { "type": "boolean" },
+        "isDemo": { "type": "boolean" },
+        "submittedAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "memberId",
+        "memberCode",
+        "memberName",
+        "amount",
+        "fundId",
+        "utrReference",
+        "status",
+        "isDemo",
+        "submittedAt",
+        "updatedAt"
+      ]
+    },
+    "NotificationItem": {
+      "title": "NotificationItem",
+      "description": "Committee announcement or automatic 5th-of-month payment reminder notification.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "type": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "targetRole": { "type": "string", "enum": ["all", "admin", "member"] },
+        "targetMemberId": { "type": "string", "maxLength": 80 },
+        "isRead": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "type", "title", "message", "targetRole", "isRead", "createdAt"]
+    },
+    "CommitteePosition": {
+      "title": "CommitteePosition",
+      "description": "Official committee office bearer record (Sadar, Secretary, Treasurer, etc.).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "roleKey": { "type": "string", "enum": ["sadar", "secretary", "treasurer", "vice_president", "member"] },
+        "designationEn": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "designationHi": { "type": "string", "maxLength": 120 },
+        "designationUr": { "type": "string", "maxLength": 120 },
+        "fullName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "appointmentDate": { "type": "string", "maxLength": 32 },
+        "termStart": { "type": "string", "maxLength": 32 },
+        "termEnd": { "type": "string", "maxLength": 32 },
+        "isActive": { "type": "boolean" },
+        "updatedByName": { "type": "string", "maxLength": 120 },
+        "isDemo": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "roleKey", "designationEn", "fullName", "isActive", "isDemo", "updatedAt"]
+    },
+    "AppSettings": {
+      "title": "AppSettings",
+      "description": "Global committee configuration including ₹5,000 dual-approval threshold and 5th-of-month reminder schedule.",
+      "type": "object",
+      "properties": {
+        "committeeName": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "committeeAddress": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "appLogoUrl": { "type": "string", "maxLength": 500 },
+        "defaultLanguage": { "type": "string", "enum": ["en", "hi", "ur"] },
+        "memberLoginEnabled": { "type": "boolean" },
+        "autoBackupEnabled": { "type": "boolean" },
+        "dualApprovalEnabled": { "type": "boolean" },
+        "dualApprovalLimit": { "type": "number", "minimum": 500, "maximum": 10000000 },
+        "reminderDayOfMonth": { "type": "integer", "minimum": 1, "maximum": 28 },
+        "reminderFrequency": { "type": "string", "enum": ["monthly", "biweekly", "weekly"] },
+        "defaultMonthlyContribution": { "type": "number", "minimum": 10, "maximum": 100000 },
+        "hideMemberPhonesForMembers": { "type": "boolean" },
+        "isDemoDataActive": { "type": "boolean" },
+        "lastSyncedBy": { "type": "string", "maxLength": 128 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "committeeName",
+        "committeeAddress",
+        "dualApprovalEnabled",
+        "dualApprovalLimit",
+        "reminderDayOfMonth",
+        "reminderFrequency",
+        "defaultMonthlyContribution",
+        "hideMemberPhonesForMembers",
+        "isDemoDataActive",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private authenticated user profiles and role mappings."
+    },
+    "/admins/{uid}": {
+      "schema": { "$ref": "#/entities/AdminRegistry" },
+      "description": "Authorized administrator registry (max 2 slots)."
+    },
+    "/members/{memberId}": {
+      "schema": { "$ref": "#/entities/CommitteeMemberProfile" },
+      "description": "Committee member contribution summary records (masked phone, read-only for members)."
+    },
+    "/contributions/{contributionId}": {
+      "schema": { "$ref": "#/entities/MonthlyContribution" },
+      "description": "Monthly member contribution dues and payment status records."
+    },
+    "/funds/{fundId}": {
+      "schema": { "$ref": "#/entities/VirtualFund" },
+      "description": "Separate virtual fund ledgers linked to the single committee bank account."
+    },
+    "/transactions/{transactionId}": {
+      "schema": { "$ref": "#/entities/FinancialTransaction" },
+      "description": "Verified income, expense, internal transfer, and reversal records."
+    },
+    "/salaries/{salaryId}": {
+      "schema": { "$ref": "#/entities/StaffSalary" },
+      "description": "Imam and Madrasa teacher salary ledgers."
+    },
+    "/approvals/{approvalId}": {
+      "schema": { "$ref": "#/entities/ApprovalWorkflow" },
+      "description": "Dual-admin approval workflow records for expenses above ₹5,000."
+    },
+    "/audit_logs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Immutable append-only audit trail records."
+    },
+    "/monthly_closings/{monthKey}": {
+      "schema": { "$ref": "#/entities/MonthlyClosing" },
+      "description": "Monthly accounting period closings and locks."
+    },
+    "/bank_accounts/{bankId}": {
+      "schema": { "$ref": "#/entities/BankAccount" },
+      "description": "Official physical committee bank account and UPI details."
+    },
+    "/payment_submissions/{submissionId}": {
+      "schema": { "$ref": "#/entities/PaymentSubmission" },
+      "description": "Member UPI/Bank transfer proof submissions awaiting admin verification."
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/NotificationItem" },
+      "description": "Committee announcements and automatic 5th-of-month payment reminders."
+    },
+    "/committee_members/{positionId}": {
+      "schema": { "$ref": "#/entities/CommitteePosition" },
+      "description": "Current and historical committee office bearers (Sadar, Secretary, Treasurer)."
+    },
+    "/app_settings/{settingId}": {
+      "schema": { "$ref": "#/entities/AppSettings" },
+      "description": "Committee governance settings and live sync metadata."
+    }
+  }
+}

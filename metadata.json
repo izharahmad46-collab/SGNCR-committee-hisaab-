@@ -1,0 +1,6 @@
+{
+  "name": "S.G.N Committee Noori Jama Masjid & Madarsa Anwarool Uloom",
+  "description": "Financial and committee management application for S.G.N Committee Noori Jama Masjid & Madarsa Anwarool Uloom, At Ragdih, PO Chalkusha, District Hazaribagh, Jharkhand – 825109, India.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

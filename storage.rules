@@ -1,0 +1,37 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Default deny catch-all
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    function isVerified() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    function isPrimaryAdmin() {
+      return isVerified() && request.auth.token.email == 'izharahmad46@gmail.com';
+    }
+
+    function isValidImageUpload() {
+      return request.resource != null
+        && request.resource.size > 0
+        && request.resource.size <= 3 * 1024 * 1024
+        && request.resource.contentType.matches('^image/(png|jpeg|jpg|webp)$');
+    }
+
+    // Official Committee UPI QR code images (Admin upload only, Verified members read-only)
+    match /upi_qr/{fileName} {
+      allow read: if isVerified();
+      allow write: if isPrimaryAdmin() && isValidImageUpload();
+    }
+
+    // Member payment receipt screenshots (Owner create only, no overwrite/delete by members)
+    match /payment_receipts/{uid}/{fileName} {
+      allow read: if isVerified() && (request.auth.uid == uid || isPrimaryAdmin());
+      allow create: if isVerified() && request.auth.uid == uid && isValidImageUpload();
+      allow update, delete: if false;
+    }
+  }
+}

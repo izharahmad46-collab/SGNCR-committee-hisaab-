@@ -1,0 +1,684 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =========================================================================
+    // PILLAR 1: DEFAULT DENY CATCH-ALL (FIRST RULE BLOCK)
+    // =========================================================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // PILLAR 1 & 2: GLOBAL HELPERS & AUTHENTICATION GATES
+    // =========================================================================
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(uid) {
+      return isVerified() && request.auth.uid == uid;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9._-]+$');
+    }
+
+    function isValidMonthKey(key) {
+      return key is string && key.size() == 7 && key.matches('^[0-9]{4}-[0-9]{2}$');
+    }
+
+    function isPrimaryAdmin() {
+      return isVerified() && request.auth.token.email == 'izharahmad46@gmail.com';
+    }
+
+    function isRegisteredAdmin() {
+      return isVerified()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role in ['admin_main', 'admin_secondary'];
+    }
+
+    function isAdmin() {
+      return isPrimaryAdmin() || isRegisteredAdmin();
+    }
+
+    function isNonEmptyString(val, maxLen) {
+      return val is string && val.size() >= 1 && val.size() <= maxLen;
+    }
+
+    function isOptionalString(data, key, maxLen) {
+      return !(key in data) || (data[key] is string && data[key].size() <= maxLen);
+    }
+
+    // =========================================================================
+    // PILLAR 4: STANDALONE ENTITY VALIDATORS
+    // =========================================================================
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'role', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'displayName', 'role', 'memberCode', 'createdAt', 'updatedAt'])
+        && data.uid == userId
+        && isNonEmptyString(data.email, 254)
+        && isNonEmptyString(data.displayName, 120)
+        && data.role in ['admin_main', 'admin_secondary', 'member']
+        && isOptionalString(data, 'memberCode', 32)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAdminRegistry(data, uid) {
+      return data.keys().hasAll(['uid', 'email', 'fullName', 'role', 'slot', 'assignedByUid', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'fullName', 'role', 'slot', 'assignedByUid', 'createdAt', 'updatedAt'])
+        && data.uid == uid
+        && isNonEmptyString(data.email, 254)
+        && isNonEmptyString(data.fullName, 120)
+        && data.role in ['admin_main', 'admin_secondary']
+        && data.slot is int && data.slot >= 1 && data.slot <= 2
+        && ((data.slot == 1 && data.role == 'admin_main') || (data.slot == 2 && data.role == 'admin_secondary'))
+        && isNonEmptyString(data.assignedByUid, 128)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidMember(data, memberId) {
+      return data.keys().hasAll([
+          'id', 'memberCode', 'fullName', 'monthlyAmount', 'joiningDate',
+          'status', 'totalExpected', 'totalPaid', 'outstandingAmount',
+          'pendingMonthsCount', 'isDemo', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'memberCode', 'fullName', 'phoneMasked', 'village', 'monthlyAmount', 'joiningDate',
+          'status', 'totalExpected', 'totalPaid', 'outstandingAmount',
+          'pendingMonthsCount', 'pendingSince', 'isDemo', 'updatedAt'
+        ])
+        && data.id == memberId
+        && isNonEmptyString(data.memberCode, 32)
+        && isNonEmptyString(data.fullName, 120)
+        && isOptionalString(data, 'phoneMasked', 32)
+        && isOptionalString(data, 'village', 160)
+        && data.monthlyAmount is number && data.monthlyAmount >= 1 && data.monthlyAmount <= 1000000
+        && data.joiningDate is string && data.joiningDate.size() == 10
+        && data.status in ['active', 'inactive']
+        && data.totalExpected is number && data.totalExpected >= 0
+        && data.totalPaid is number && data.totalPaid >= 0
+        && data.outstandingAmount is number && data.outstandingAmount >= 0
+        && data.pendingMonthsCount is int && data.pendingMonthsCount >= 0 && data.pendingMonthsCount <= 600
+        && isOptionalString(data, 'pendingSince', 16)
+        && data.isDemo is bool
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidContribution(data, contributionId) {
+      return data.keys().hasAll([
+          'id', 'memberId', 'memberCode', 'memberName', 'monthKey',
+          'expectedAmount', 'paidAmount', 'remainingAmount', 'status', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'memberId', 'memberCode', 'memberName', 'monthKey',
+          'expectedAmount', 'paidAmount', 'remainingAmount', 'status',
+          'paidDate', 'txnNumber', 'updatedAt'
+        ])
+        && data.id == contributionId
+        && isNonEmptyString(data.memberId, 80)
+        && isNonEmptyString(data.memberCode, 32)
+        && isNonEmptyString(data.memberName, 120)
+        && isValidMonthKey(data.monthKey)
+        && data.expectedAmount is number && data.expectedAmount >= 1 && data.expectedAmount <= 1000000
+        && data.paidAmount is number && data.paidAmount >= 0 && data.paidAmount <= 1000000
+        && data.remainingAmount is number && data.remainingAmount >= 0 && data.remainingAmount <= 1000000
+        && data.status in ['paid', 'partial', 'unpaid', 'overdue']
+        && isOptionalString(data, 'paidDate', 32)
+        && isOptionalString(data, 'txnNumber', 48)
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidFund(data, fundId) {
+      return data.keys().hasAll([
+          'id', 'code', 'nameEn', 'scope', 'isRestricted',
+          'openingBalance', 'totalIncome', 'totalExpense',
+          'transfersIn', 'transfersOut', 'currentBalance', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'code', 'nameEn', 'nameHi', 'nameUr', 'scope', 'isRestricted', 'restrictedRule',
+          'description', 'isActive', 'openingBalance', 'totalIncome', 'totalExpense',
+          'transfersIn', 'transfersOut', 'currentBalance', 'updatedAt'
+        ])
+        && data.id == fundId
+        && isNonEmptyString(data.code, 32)
+        && isNonEmptyString(data.nameEn, 120)
+        && isOptionalString(data, 'nameHi', 120)
+        && isOptionalString(data, 'nameUr', 120)
+        && data.scope in ['masjid', 'madrasa', 'restricted', 'general']
+        && data.isRestricted is bool
+        && isOptionalString(data, 'restrictedRule', 300)
+        && isOptionalString(data, 'description', 400)
+        && (!('isActive' in data) || data.isActive is bool)
+        && data.openingBalance is number
+        && data.totalIncome is number && data.totalIncome >= 0
+        && data.totalExpense is number && data.totalExpense >= 0
+        && data.transfersIn is number && data.transfersIn >= 0
+        && data.transfersOut is number && data.transfersOut >= 0
+        && data.currentBalance is number
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidTransaction(data, txnId) {
+      return data.keys().hasAll([
+          'id', 'txnNumber', 'date', 'monthKey', 'type', 'category', 'fundId',
+          'paymentMethod', 'amount', 'partyName', 'status', 'createdBy',
+          'createdByName', 'isDemo', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'txnNumber', 'date', 'monthKey', 'type', 'category', 'fundId',
+          'targetFundId', 'bankAccountId', 'paymentMethod', 'amount', 'partyName',
+          'description', 'status', 'createdBy', 'createdByName', 'approvedBy',
+          'approvedByName', 'isDemo', 'createdAt', 'updatedAt'
+        ])
+        && data.id == txnId
+        && isNonEmptyString(data.txnNumber, 48)
+        && data.date is string && data.date.size() == 10
+        && isValidMonthKey(data.monthKey)
+        && data.type in ['income', 'expense', 'transfer', 'reversal']
+        && isNonEmptyString(data.category, 80)
+        && isNonEmptyString(data.fundId, 80)
+        && isOptionalString(data, 'targetFundId', 80)
+        && isOptionalString(data, 'bankAccountId', 80)
+        && data.paymentMethod in ['Cash', 'UPI', 'Bank']
+        && data.amount is number && data.amount > 0 && data.amount <= 100000000
+        && isNonEmptyString(data.partyName, 160)
+        && isOptionalString(data, 'description', 500)
+        && data.status in ['approved', 'pending_approval', 'rejected', 'reversed']
+        && isNonEmptyString(data.createdBy, 128)
+        && isNonEmptyString(data.createdByName, 120)
+        && isOptionalString(data, 'approvedBy', 128)
+        && isOptionalString(data, 'approvedByName', 120)
+        && data.isDemo is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSalary(data, salaryId) {
+      return data.keys().hasAll([
+          'id', 'name', 'designation', 'institution', 'fundId', 'monthlySalary',
+          'joiningDate', 'status', 'totalPayable', 'totalPaid', 'totalPending',
+          'isDemo', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'name', 'designation', 'institution', 'fundId', 'monthlySalary',
+          'joiningDate', 'status', 'totalPayable', 'totalPaid', 'totalPending',
+          'maxPendingDays', 'isDemo', 'updatedAt'
+        ])
+        && data.id == salaryId
+        && isNonEmptyString(data.name, 120)
+        && isNonEmptyString(data.designation, 100)
+        && data.institution in ['masjid', 'madrasa']
+        && isNonEmptyString(data.fundId, 80)
+        && data.monthlySalary is number && data.monthlySalary >= 1 && data.monthlySalary <= 1000000
+        && data.joiningDate is string && data.joiningDate.size() == 10
+        && data.status in ['active', 'inactive']
+        && data.totalPayable is number && data.totalPayable >= 0
+        && data.totalPaid is number && data.totalPaid >= 0
+        && data.totalPending is number && data.totalPending >= 0
+        && (!('maxPendingDays' in data) || (data.maxPendingDays is int && data.maxPendingDays >= 0))
+        && data.isDemo is bool
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidApproval(data, approvalId) {
+      return data.keys().hasAll([
+          'id', 'txnId', 'txnNumber', 'amount', 'fundId', 'partyName',
+          'status', 'createdByUid', 'createdByName', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'txnId', 'txnNumber', 'amount', 'fundId', 'partyName',
+          'status', 'createdByUid', 'createdByName', 'decidedByUid',
+          'decidedByName', 'decisionReason', 'createdAt', 'updatedAt'
+        ])
+        && data.id == approvalId
+        && isNonEmptyString(data.txnId, 80)
+        && isNonEmptyString(data.txnNumber, 48)
+        && data.amount is number && data.amount > 0 && data.amount <= 100000000
+        && isNonEmptyString(data.fundId, 80)
+        && isNonEmptyString(data.partyName, 160)
+        && data.status in ['pending', 'approved', 'rejected']
+        && isNonEmptyString(data.createdByUid, 128)
+        && isNonEmptyString(data.createdByName, 120)
+        && isOptionalString(data, 'decidedByUid', 128)
+        && isOptionalString(data, 'decidedByName', 120)
+        && isOptionalString(data, 'decisionReason', 400)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAuditLog(data, logId) {
+      return data.keys().hasAll([
+          'id', 'timestamp', 'adminId', 'adminName', 'action',
+          'entityType', 'entityId', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'timestamp', 'adminId', 'adminName', 'action',
+          'entityType', 'entityId', 'beforeData', 'afterData', 'reason', 'createdAt'
+        ])
+        && data.id == logId
+        && isNonEmptyString(data.timestamp, 40)
+        && isNonEmptyString(data.adminId, 128)
+        && isNonEmptyString(data.adminName, 120)
+        && isNonEmptyString(data.action, 80)
+        && isNonEmptyString(data.entityType, 80)
+        && isNonEmptyString(data.entityId, 120)
+        && isOptionalString(data, 'beforeData', 4000)
+        && isOptionalString(data, 'afterData', 4000)
+        && isOptionalString(data, 'reason', 500)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidMonthlyClosing(data, monthKey) {
+      return data.keys().hasAll([
+          'monthKey', 'isLocked', 'totalIncome', 'totalExpense',
+          'outstandingContributions', 'pendingSalaries', 'closingBalance', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'monthKey', 'isLocked', 'totalIncome', 'totalExpense',
+          'outstandingContributions', 'pendingSalaries', 'closingBalance',
+          'closedByName', 'reopenReason', 'updatedAt'
+        ])
+        && data.monthKey == monthKey
+        && isValidMonthKey(data.monthKey)
+        && data.isLocked is bool
+        && data.totalIncome is number && data.totalIncome >= 0
+        && data.totalExpense is number && data.totalExpense >= 0
+        && data.outstandingContributions is number && data.outstandingContributions >= 0
+        && data.pendingSalaries is number && data.pendingSalaries >= 0
+        && data.closingBalance is number
+        && isOptionalString(data, 'closedByName', 120)
+        && isOptionalString(data, 'reopenReason', 400)
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidBankAccount(data, bankId) {
+      return data.keys().hasAll([
+          'id', 'bankName', 'accountName', 'accountNumber', 'ifsc',
+          'openingBalance', 'currentBalance', 'isActive', 'isDemo', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'bankName', 'accountName', 'accountNumber', 'ifsc', 'branch',
+          'upiId', 'qrCodeUrl', 'fundScope', 'openingBalance', 'currentBalance', 'instructions',
+          'isActive', 'isDemo', 'updatedAt'
+        ])
+        && data.id == bankId
+        && isNonEmptyString(data.bankName, 120)
+        && isNonEmptyString(data.accountName, 160)
+        && data.accountNumber is string && data.accountNumber.size() >= 4 && data.accountNumber.size() <= 40
+        && data.ifsc is string && data.ifsc.size() >= 4 && data.ifsc.size() <= 20
+        && isOptionalString(data, 'branch', 120)
+        && isOptionalString(data, 'upiId', 120)
+        && isOptionalString(data, 'qrCodeUrl', 500)
+        && isOptionalString(data, 'fundScope', 120)
+        && data.openingBalance is number
+        && data.currentBalance is number
+        && isOptionalString(data, 'instructions', 500)
+        && data.isActive is bool
+        && data.isDemo is bool
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPaymentSubmission(data, subId) {
+      return data.keys().hasAll([
+          'id', 'memberId', 'memberCode', 'memberName', 'amount', 'fundId',
+          'utrReference', 'status', 'isDemo', 'submittedAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'memberId', 'memberCode', 'memberName', 'submittedByUid',
+          'paymentCategory', 'amount', 'fundId', 'utrReference', 'screenshotUrl',
+          'notes', 'status', 'verifiedByName', 'rejectionNote', 'linkedTxnNumber',
+          'receiptNumber', 'bankVerifiedConfirmed', 'isDemo', 'submittedAt', 'updatedAt'
+        ])
+        && data.id == subId
+        && isNonEmptyString(data.memberId, 80)
+        && isNonEmptyString(data.memberCode, 32)
+        && isNonEmptyString(data.memberName, 120)
+        && isOptionalString(data, 'submittedByUid', 128)
+        && (!('paymentCategory' in data) || data.paymentCategory in ['monthly_contribution', 'donation'])
+        && data.amount is number && data.amount >= 1 && data.amount <= 10000000
+        && isNonEmptyString(data.fundId, 80)
+        && data.utrReference is string && data.utrReference.size() >= 6 && data.utrReference.size() <= 80
+        && isOptionalString(data, 'screenshotUrl', 500)
+        && isOptionalString(data, 'notes', 400)
+        && data.status in ['pending_verification', 'verified', 'rejected']
+        && isOptionalString(data, 'verifiedByName', 120)
+        && isOptionalString(data, 'rejectionNote', 400)
+        && isOptionalString(data, 'linkedTxnNumber', 48)
+        && isOptionalString(data, 'receiptNumber', 48)
+        && (!('bankVerifiedConfirmed' in data) || data.bankVerifiedConfirmed is bool)
+        && data.isDemo is bool
+        && isNonEmptyString(data.submittedAt, 40)
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidNotification(data, notifId) {
+      return data.keys().hasAll(['id', 'type', 'title', 'message', 'targetRole', 'isRead', 'createdAt'])
+        && data.keys().hasOnly(['id', 'type', 'title', 'message', 'targetRole', 'targetMemberId', 'isRead', 'createdAt'])
+        && data.id == notifId
+        && isNonEmptyString(data.type, 60)
+        && isNonEmptyString(data.title, 160)
+        && isNonEmptyString(data.message, 1000)
+        && data.targetRole in ['all', 'admin', 'member']
+        && isOptionalString(data, 'targetMemberId', 80)
+        && data.isRead is bool
+        && data.createdAt is timestamp;
+    }
+
+    function isValidCommitteePosition(data, posId) {
+      return data.keys().hasAll(['id', 'roleKey', 'designationEn', 'fullName', 'isActive', 'isDemo', 'updatedAt'])
+        && data.keys().hasOnly([
+          'id', 'roleKey', 'designationEn', 'designationHi', 'designationUr',
+          'fullName', 'appointmentDate', 'termStart', 'termEnd', 'isActive',
+          'updatedByName', 'isDemo', 'updatedAt'
+        ])
+        && data.id == posId
+        && data.roleKey in ['sadar', 'secretary', 'treasurer', 'vice_president', 'member']
+        && isNonEmptyString(data.designationEn, 120)
+        && isOptionalString(data, 'designationHi', 120)
+        && isOptionalString(data, 'designationUr', 120)
+        && isNonEmptyString(data.fullName, 120)
+        && isOptionalString(data, 'appointmentDate', 32)
+        && isOptionalString(data, 'termStart', 32)
+        && isOptionalString(data, 'termEnd', 32)
+        && data.isActive is bool
+        && isOptionalString(data, 'updatedByName', 120)
+        && data.isDemo is bool
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAppSettings(data) {
+      return data.keys().hasAll([
+          'committeeName', 'committeeAddress', 'dualApprovalEnabled', 'dualApprovalLimit',
+          'reminderDayOfMonth', 'reminderFrequency', 'defaultMonthlyContribution',
+          'hideMemberPhonesForMembers', 'isDemoDataActive', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'committeeName', 'committeeAddress', 'appLogoUrl', 'defaultLanguage',
+          'memberLoginEnabled', 'autoBackupEnabled', 'dualApprovalEnabled', 'dualApprovalLimit',
+          'reminderDayOfMonth', 'reminderFrequency', 'defaultMonthlyContribution',
+          'hideMemberPhonesForMembers', 'isDemoDataActive', 'lastSyncedBy', 'updatedAt'
+        ])
+        && isNonEmptyString(data.committeeName, 200)
+        && isNonEmptyString(data.committeeAddress, 300)
+        && isOptionalString(data, 'appLogoUrl', 500)
+        && (!('defaultLanguage' in data) || data.defaultLanguage in ['en', 'hi', 'ur'])
+        && (!('memberLoginEnabled' in data) || data.memberLoginEnabled is bool)
+        && (!('autoBackupEnabled' in data) || data.autoBackupEnabled is bool)
+        && data.dualApprovalEnabled is bool
+        && data.dualApprovalLimit is number && data.dualApprovalLimit >= 500 && data.dualApprovalLimit <= 10000000
+        && data.reminderDayOfMonth is int && data.reminderDayOfMonth >= 1 && data.reminderDayOfMonth <= 28
+        && data.reminderFrequency in ['monthly', 'biweekly', 'weekly']
+        && data.defaultMonthlyContribution is number && data.defaultMonthlyContribution >= 10 && data.defaultMonthlyContribution <= 100000
+        && data.hideMemberPhonesForMembers is bool
+        && data.isDemoDataActive is bool
+        && isOptionalString(data, 'lastSyncedBy', 128)
+        && data.updatedAt is timestamp;
+    }
+
+    // =========================================================================
+    // COLLECTION RULES
+    // =========================================================================
+
+    // 1. Private User Profiles (PII isolated; strict anti-privilege-escalation)
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isPrimaryAdmin());
+      allow list: if isPrimaryAdmin();
+      allow create: if isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().email == request.auth.token.email
+        && (incoming().role == 'member' || (isPrimaryAdmin() && incoming().role == 'admin_main'))
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'updatedAt']))
+          || (isPrimaryAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'role', 'memberCode', 'updatedAt']))
+        );
+      allow delete: if false;
+    }
+
+    // 2. Authorized Admin Registry (Strict Max 2 Admins, Primary Admin controlled)
+    match /admins/{uid} {
+      allow get: if isValidId(uid) && (isOwner(uid) || isPrimaryAdmin());
+      allow list: if isPrimaryAdmin();
+      allow create: if isValidId(uid)
+        && isPrimaryAdmin()
+        && isValidAdminRegistry(incoming(), uid)
+        && incoming().assignedByUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(uid)
+        && isPrimaryAdmin()
+        && isValidAdminRegistry(incoming(), uid)
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'role', 'slot', 'updatedAt']);
+      allow delete: if isValidId(uid) && isPrimaryAdmin() && uid != request.auth.uid;
+    }
+
+    // 3. Committee Members (Masked phone only; verified read-only, admin write)
+    match /members/{memberId} {
+      allow get: if isValidId(memberId) && isVerified();
+      allow list: if isVerified();
+      allow create, update: if isValidId(memberId)
+        && isAdmin()
+        && isValidMember(incoming(), memberId)
+        && incoming().updatedAt == request.time;
+      allow delete: if isValidId(memberId) && isPrimaryAdmin();
+    }
+
+    // 4. Monthly Member Contributions
+    match /contributions/{contributionId} {
+      allow get: if isValidId(contributionId) && isVerified();
+      allow list: if isVerified();
+      allow create, update: if isValidId(contributionId)
+        && isAdmin()
+        && isValidContribution(incoming(), contributionId)
+        && incoming().updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    // 5. Virtual Fund Ledgers
+    match /funds/{fundId} {
+      allow get: if isValidId(fundId) && isVerified();
+      allow list: if isVerified();
+      allow create, update: if isValidId(fundId)
+        && isAdmin()
+        && isValidFund(incoming(), fundId)
+        && incoming().updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    // 6. Financial Transactions (No deletion; terminal state guard on rejected/reversed)
+    match /transactions/{transactionId} {
+      allow get: if isValidId(transactionId) && isVerified();
+      allow list: if isVerified();
+      allow create: if isValidId(transactionId)
+        && isAdmin()
+        && isValidTransaction(incoming(), transactionId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(transactionId)
+        && isAdmin()
+        && isValidTransaction(incoming(), transactionId)
+        && existing().status in ['pending_approval', 'approved']
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().amount == existing().amount
+        && incoming().fundId == existing().fundId
+        && incoming().type == existing().type
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'status', 'approvedBy', 'approvedByName', 'category', 'partyName', 'description', 'updatedAt'
+        ]);
+      allow delete: if false;
+    }
+
+    // 7. Imam & Madrasa Teacher Salaries
+    match /salaries/{salaryId} {
+      allow get: if isValidId(salaryId) && isVerified();
+      allow list: if isVerified();
+      allow create, update: if isValidId(salaryId)
+        && isAdmin()
+        && isValidSalary(incoming(), salaryId)
+        && incoming().updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    // 8. Dual-Admin Approvals (> ₹5,000, creator cannot self-approve, terminal state locked)
+    match /approvals/{approvalId} {
+      allow get: if isValidId(approvalId) && isVerified();
+      allow list: if isVerified();
+      allow create: if isValidId(approvalId)
+        && isAdmin()
+        && isValidApproval(incoming(), approvalId)
+        && incoming().status == 'pending'
+        && incoming().createdByUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(approvalId)
+        && isAdmin()
+        && isValidApproval(incoming(), approvalId)
+        && existing().status == 'pending'
+        && existing().createdByUid != request.auth.uid
+        && incoming().status in ['approved', 'rejected']
+        && incoming().decidedByUid == request.auth.uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'decidedByUid', 'decidedByName', 'decisionReason', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    // 9. Immutable Audit Trail (Append-Only — NEVER update or delete)
+    match /audit_logs/{logId} {
+      allow get: if isValidId(logId) && isVerified();
+      allow list: if isVerified();
+      allow create: if isValidId(logId)
+        && isAdmin()
+        && isValidAuditLog(incoming(), logId)
+        && incoming().createdAt == request.time;
+      allow update, delete: if false;
+    }
+
+    // 10. Monthly Accounting Closings (Reopening locked month requires Primary Admin + reason)
+    match /monthly_closings/{monthKey} {
+      allow get: if isValidMonthKey(monthKey) && isVerified();
+      allow list: if isVerified();
+      allow create: if isValidMonthKey(monthKey)
+        && isAdmin()
+        && isValidMonthlyClosing(incoming(), monthKey)
+        && incoming().updatedAt == request.time;
+      allow update: if isValidMonthKey(monthKey)
+        && isAdmin()
+        && isValidMonthlyClosing(incoming(), monthKey)
+        && incoming().updatedAt == request.time
+        && (
+          existing().isLocked == false
+          || (
+            isPrimaryAdmin()
+            && incoming().isLocked == false
+            && 'reopenReason' in incoming()
+            && incoming().reopenReason is string
+            && incoming().reopenReason.size() >= 5
+            && incoming().reopenReason.size() <= 400
+          )
+        );
+      allow delete: if false;
+    }
+
+    // 11. Official Physical Bank Account & UPI Details
+    match /bank_accounts/{bankId} {
+      allow get: if isValidId(bankId) && isVerified();
+      allow list: if isVerified();
+      allow create, update: if isValidId(bankId)
+        && isAdmin()
+        && isValidBankAccount(incoming(), bankId)
+        && incoming().updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    // 12. Member Payment Proof Submissions (Owner or Admin create, Admin verify/reject)
+    match /payment_submissions/{submissionId} {
+      allow get: if isValidId(submissionId) && isVerified();
+      allow list: if isVerified();
+      allow create: if isValidId(submissionId)
+        && isValidPaymentSubmission(incoming(), submissionId)
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            isVerified()
+            && incoming().submittedByUid == request.auth.uid
+            && incoming().status == 'pending_verification'
+          )
+        );
+      allow update: if isValidId(submissionId)
+        && isAdmin()
+        && isValidPaymentSubmission(incoming(), submissionId)
+        && existing().status == 'pending_verification'
+        && incoming().status in ['verified', 'rejected']
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'status', 'verifiedByName', 'rejectionNote', 'linkedTxnNumber',
+          'receiptNumber', 'bankVerifiedConfirmed', 'updatedAt'
+        ]);
+      allow delete: if false;
+    }
+
+    // 13. Notifications & Automatic 5th-of-Month Reminders
+    match /notifications/{notificationId} {
+      allow get: if isValidId(notificationId) && isVerified();
+      allow list: if isVerified();
+      allow create: if isValidId(notificationId)
+        && isAdmin()
+        && isValidNotification(incoming(), notificationId)
+        && incoming().createdAt == request.time;
+      allow update: if isValidId(notificationId)
+        && isAdmin()
+        && isValidNotification(incoming(), notificationId)
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly(['isRead']);
+      allow delete: if false;
+    }
+
+    // 14. Committee Office Bearers (Sadar, Secretary, Treasurer)
+    match /committee_members/{positionId} {
+      allow get: if isValidId(positionId) && isVerified();
+      allow list: if isVerified();
+      allow create, update: if isValidId(positionId)
+        && isAdmin()
+        && isValidCommitteePosition(incoming(), positionId)
+        && incoming().updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    // 15. Application Governance Settings
+    match /app_settings/{settingId} {
+      allow get: if isValidId(settingId) && isVerified();
+      allow list: if isVerified();
+      allow create, update: if isValidId(settingId)
+        && isAdmin()
+        && isValidAppSettings(incoming())
+        && incoming().updatedAt == request.time;
+      allow delete: if false;
+    }
+  }
+}
